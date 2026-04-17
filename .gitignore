@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.env
+
+# Node
+node_modules/
+dist/
+dist-ssr
+*.local
+.vscode/
+
+# Audio/Temp
+*.mp3
+*.wav
+temp*
