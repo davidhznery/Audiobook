@@ -30,9 +30,36 @@ function App() {
   const [view, setView] = useState('reader')           // reader | vocab | exercises
   const [vocab, setVocab] = useState(loadVocab)
 
+  // Reader state lifted to persist across view changes
+  const [text, setText] = useState('')
+  const [audioUrl, setAudioUrl] = useState(null)
+  const [timestamps, setTimestamps] = useState([])
+
+  // Chapter management state
+  const [chapters, setChapters] = useState([])
+  const [activeChapterId, setActiveChapterId] = useState(null)
+
   const updateVocab = useCallback((fn) => {
     setVocab(prev => { const next = fn(prev); saveVocab(next); return next })
   }, [])
+
+  const loadChapter = (chapter) => {
+    setActiveChapterId(chapter.id)
+    setText(chapter.text)
+    setAudioUrl(chapter.audioUrl)
+    setTimestamps(chapter.timestamps)
+    if (view !== 'reader') setView('reader')
+  }
+
+  const clearChapters = () => {
+    if (window.confirm("Are you sure you want to clear all chapters?")) {
+      setChapters([])
+      setActiveChapterId(null)
+      setText('')
+      setAudioUrl(null)
+      setTimestamps([])
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -62,12 +89,66 @@ function App() {
         </nav>
       </header>
 
-      {/* ─── VIEWS ─── */}
-      <main className="main-content" key={view}>
-        {view === 'reader' && <ReaderView vocab={vocab} updateVocab={updateVocab} />}
-        {view === 'vocab' && <VocabView vocab={vocab} updateVocab={updateVocab} />}
-        {view === 'exercises' && <ExercisesView vocab={vocab} updateVocab={updateVocab} />}
-      </main>
+      {/* ─── MAIN LAYOUT WITH SIDEBAR ─── */}
+      <div className="app-layout">
+        <aside className="app-sidebar">
+          <div className="sidebar-header">
+            <h3>📖 My Book</h3>
+            <span className="chapter-count">{chapters.length} chapters</span>
+          </div>
+          
+          <div className="chapter-list">
+            {chapters.length === 0 ? (
+              <div className="empty-chapters">
+                No chapters yet. Add text and generate audio to create one!
+              </div>
+            ) : (
+              chapters.map((ch, idx) => (
+                <button 
+                  key={ch.id}
+                  className={`chapter-btn ${activeChapterId === ch.id ? 'active' : ''}`}
+                  onClick={() => loadChapter(ch)}
+                >
+                  <span className="chapter-icon">📚</span>
+                  <div className="chapter-info">
+                    <span className="chapter-title">{ch.title}</span>
+                    <span className="chapter-preview">{ch.text.substring(0, 30)}...</span>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+          
+          {chapters.length > 0 && (
+            <div className="sidebar-footer">
+              <button className="btn btn-danger" style={{ width: '100%' }} onClick={clearChapters}>
+                🗑️ Clear All
+              </button>
+            </div>
+          )}
+        </aside>
+
+        <main className="main-content" key={view}>
+          {view === 'reader' && (
+            <ReaderView 
+              vocab={vocab} 
+              updateVocab={updateVocab} 
+              text={text}
+              setText={setText}
+              audioUrl={audioUrl}
+              setAudioUrl={setAudioUrl}
+              timestamps={timestamps}
+              setTimestamps={setTimestamps}
+              chapters={chapters}
+              setChapters={setChapters}
+              setActiveChapterId={setActiveChapterId}
+              activeChapterId={activeChapterId}
+            />
+          )}
+          {view === 'vocab' && <VocabView vocab={vocab} updateVocab={updateVocab} />}
+          {view === 'exercises' && <ExercisesView vocab={vocab} updateVocab={updateVocab} />}
+        </main>
+      </div>
     </div>
   )
 }
@@ -75,10 +156,7 @@ function App() {
 // ═══════════════════════════════════════════════════════════════════
 // READER VIEW
 // ═══════════════════════════════════════════════════════════════════
-function ReaderView({ vocab, updateVocab }) {
-  const [text, setText] = useState('')
-  const [audioUrl, setAudioUrl] = useState(null)
-  const [timestamps, setTimestamps] = useState([])
+function ReaderView({ vocab, updateVocab, text, setText, audioUrl, setAudioUrl, timestamps, setTimestamps, chapters, setChapters, setActiveChapterId, activeChapterId }) {
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [currentWordIdx, setCurrentWordIdx] = useState(-1)
@@ -127,9 +205,22 @@ function ReaderView({ vocab, updateVocab }) {
       const { audio_base64, timestamps: ts } = res.data
       const byteArr = Uint8Array.from(atob(audio_base64), c => c.charCodeAt(0))
       const blob = new Blob([byteArr], { type: 'audio/mp3' })
-      setAudioUrl(URL.createObjectURL(blob))
+      const blobUrl = URL.createObjectURL(blob)
+      setAudioUrl(blobUrl)
       setTimestamps(ts)
       setCurrentWordIdx(-1)
+      
+      // Create new chapter
+      const newChapterId = Date.now().toString()
+      const newChapter = {
+        id: newChapterId,
+        title: `Chapter ${chapters.length + 1}`,
+        text: text,
+        audioUrl: blobUrl,
+        timestamps: ts
+      }
+      setChapters(prev => [...prev, newChapter])
+      setActiveChapterId(newChapterId)
     } catch (err) {
       console.error(err)
       alert('Error generating audio. Check backend.')
@@ -156,11 +247,26 @@ function ReaderView({ vocab, updateVocab }) {
   }, [audioUrl, timestamps])
 
   // ─── Word click ───
-  const handleWordClick = (idx, word) => {
-    setTooltip(tooltip?.idx === idx ? null : { idx, word })
+  const handleWordClick = async (idx, word) => {
+    if (tooltip?.idx === idx) {
+      setTooltip(null)
+      return
+    }
+    setTooltip({ idx, word, loading: true })
+    try {
+      const sentence = getSentenceForWord(word, text)
+      const formData = new FormData()
+      formData.append('word', word)
+      formData.append('context', sentence)
+      const res = await axios.post(`${API}/api/translate`, formData)
+      setTooltip({ idx, word, loading: false, translation: res.data.translation, meaning: res.data.meaning })
+    } catch (e) {
+      console.error(e)
+      setTooltip({ idx, word, loading: false, translation: 'Error', meaning: 'Error fetching translation' })
+    }
   }
 
-  const handleSaveWord = (word) => {
+  const handleSaveWord = (word, tooltipData) => {
     const exists = vocab.some(v => v.word.toLowerCase() === word.toLowerCase())
     if (exists) { setTooltip(null); return }
     const sentence = getSentenceForWord(word, text)
@@ -168,6 +274,8 @@ function ReaderView({ vocab, updateVocab }) {
       word,
       sentence,
       context: sentence,
+      translation: tooltipData?.translation || '',
+      meaning: tooltipData?.meaning || '',
       dateAdded: new Date().toISOString(),
       status: 'new',
       correctCount: 0
@@ -267,10 +375,18 @@ function ReaderView({ vocab, updateVocab }) {
                 {tooltip?.idx === i && (
                   <div className="word-tooltip" onClick={(e) => e.stopPropagation()}>
                     <div className="tooltip-word">{item.word}</div>
+                    {tooltip.loading ? (
+                      <div style={{fontSize: 12, color: 'var(--text-muted)', marginBottom: 8}}>Translating...</div>
+                    ) : (
+                      <div className="tooltip-translation" style={{marginBottom: 12}}>
+                        <div style={{fontWeight: 'bold', color: 'var(--text-primary)', fontSize: 15}}>{tooltip.translation}</div>
+                        <div style={{fontSize: 12, color: 'var(--text-secondary)', marginTop: 4}}>{tooltip.meaning}</div>
+                      </div>
+                    )}
                     <div className="tooltip-actions">
                       {isWordSaved(item.word)
                         ? <button className="btn btn-sm btn-success" disabled>✓ Saved</button>
-                        : <button className="btn btn-sm btn-primary" onClick={() => handleSaveWord(item.word)}>💾 Save</button>
+                        : <button className="btn btn-sm btn-primary" onClick={() => handleSaveWord(item.word, tooltip)}>💾 Save</button>
                       }
                       <button className="btn btn-sm btn-secondary" onClick={() => setTooltip(null)}>✕</button>
                     </div>

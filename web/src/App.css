@@ -95,12 +95,122 @@
 }
 
 /* ====== MAIN CONTENT ====== */
+.app-layout {
+  display: flex;
+  flex: 1;
+  height: calc(100vh - 73px); /* approx header height */
+  overflow: hidden;
+}
+
+.app-sidebar {
+  width: 280px;
+  background: rgba(11, 14, 24, 0.6);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  backdrop-filter: blur(10px);
+}
+
+.sidebar-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sidebar-header h3 {
+  font-size: 16px;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.chapter-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.chapter-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.empty-chapters {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 20px 10px;
+  font-style: italic;
+}
+
+.chapter-btn {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s var(--ease);
+}
+
+.chapter-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.chapter-btn.active {
+  background: rgba(0, 212, 255, 0.1);
+  border-color: var(--accent-cyan);
+}
+
+.chapter-icon {
+  font-size: 20px;
+  margin-top: 2px;
+}
+
+.chapter-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chapter-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.chapter-preview {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-footer {
+  padding: 16px;
+  border-top: 1px solid var(--border);
+}
+
 .main-content {
   flex: 1;
   padding: 32px;
   max-width: 1100px;
-  width: 100%;
   margin: 0 auto;
+  overflow-y: auto;
+  height: 100%;
   animation: fadeIn 0.4s var(--ease);
 }
 

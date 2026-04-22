@@ -70,5 +70,45 @@ async def generate_karaoke(text: str = Form(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/translate")
+async def translate_word(word: str = Form(...), context: str = Form(...)):
+    """Translates a word given its context using Gemini."""
+    try:
+        from google import genai
+        client = genai.Client() # Picks up GEMINI_API_KEY
+        
+        prompt = f"""
+        You are an expert English to Spanish translator and English teacher.
+        The user wants to know the meaning of the English word "{word}" in the context of the following sentence:
+        "{context}"
+        
+        Provide:
+        1. A brief, accurate translation of the word into Spanish.
+        2. A very short explanation (max 1 sentence) in Spanish of what it means in this specific context.
+        
+        Format the response strictly as a JSON object:
+        {{"translation": "...", "meaning": "..."}}
+        """
+        
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
+        
+        import json
+        # Try to parse the JSON response. Gemini might wrap it in ```json ... ```
+        text_resp = response.text.strip()
+        if text_resp.startswith("```json"):
+            text_resp = text_resp[7:]
+        if text_resp.endswith("```"):
+            text_resp = text_resp[:-3]
+            
+        result = json.loads(text_resp.strip())
+        return result
+    except Exception as e:
+        print("Translation error:", e)
+        # Fallback response if API fails
+        return {"translation": "Error", "meaning": f"Could not translate: {str(e)}"}
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
