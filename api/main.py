@@ -1,13 +1,20 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 import os
 import io
 import uvicorn
+import json
 from services.tts_engine import generate_karaoke_data
 from PyPDF2 import PdfReader
 
-app = FastAPI(title="LinguaRead API")
+from database import engine, get_db
+import models
 
+# Create database tables
+models.Base.metadata.create_all(bind=engine)
+
+app = FastAPI(title="LinguaRead API")
 # Setup CORS for local React dev
 app.add_middleware(
     CORSMiddleware,
@@ -22,8 +29,8 @@ def health_check():
     return {"status": "ok"}
 
 @app.post("/api/upload-pdf")
-async def upload_pdf(file: UploadFile = File(...)):
-    """Extract text from an uploaded PDF file."""
+async def upload_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Extract text from an uploaded PDF file and save to database."""
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
     
@@ -47,8 +54,22 @@ async def upload_pdf(file: UploadFile = File(...)):
         
         if not combined_text.strip():
             raise HTTPException(status_code=422, detail="Could not extract text from this PDF. It may be scanned/image-based.")
+            
+        # Save to Database
+        book = models.Book(title=file.filename, total_pages=len(pdf_reader.pages))
+        db.add(book)
+        db.commit()
+        db.refresh(book)
+
+        # We can also save the pages, or just save one big page if we are sending combined text
+        # For simplicity in caching exact text, let's also save the combined text as a single page entry
+        # so caching works perfectly if they just generate audio for the whole thing.
+        db_page = models.Page(book_id=book.id, page_number=1, text_content=combined_text)
+        db.add(db_page)
+        db.commit()
         
         return {
+            "book_id": book.id,
             "text": combined_text,
             "pages": pages,
             "total_pages": len(pdf_reader.pages)
@@ -59,19 +80,40 @@ async def upload_pdf(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
 
 @app.post("/api/generate-karaoke")
-async def generate_karaoke(text: str = Form(...)):
+async def generate_karaoke(text: str = Form(...), db: Session = Depends(get_db)):
     if not text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
         
     try:
+        # Check cache
+        db_page = db.query(models.Page).filter(models.Page.text_content == text).first()
+        if db_page and db_page.audio_base64 and db_page.timestamps_json:
+            print("Serving audio from Database Cache!")
+            return {
+                "audio_base64": db_page.audio_base64,
+                "timestamps": json.loads(db_page.timestamps_json)
+            }
+
         # Generate the audio and timestamps
         result = await generate_karaoke_data(text)
+        
+        # Save to cache
+        if db_page:
+            db_page.audio_base64 = result["audio_base64"]
+            db_page.timestamps_json = json.dumps(result["timestamps"])
+            db.commit()
+        else:
+            # If they just pasted text not from a PDF
+            new_page = models.Page(text_content=text, audio_base64=result["audio_base64"], timestamps_json=json.dumps(result["timestamps"]))
+            db.add(new_page)
+            db.commit()
+
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/translate")
-async def translate_word(word: str = Form(...), context: str = Form(...)):
+async def translate_word(word: str = Form(...), context: str = Form(...), db: Session = Depends(get_db)):
     """Translates a word given its context using Gemini."""
     try:
         from google import genai
@@ -104,6 +146,20 @@ async def translate_word(word: str = Form(...), context: str = Form(...)):
             text_resp = text_resp[:-3]
             
         result = json.loads(text_resp.strip())
+        
+        # Save to Vocabulary
+        try:
+            vocab = models.Vocabulary(
+                word=word,
+                translation=result.get("translation", ""),
+                context=context,
+                meaning=result.get("meaning", "")
+            )
+            db.add(vocab)
+            db.commit()
+        except Exception as db_err:
+            print(f"Error saving vocab to DB: {db_err}")
+
         return result
     except Exception as e:
         print("Translation error:", e)

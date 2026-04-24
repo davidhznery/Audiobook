@@ -22,3 +22,4 @@ dist-ssr
 *.mp3
 *.wav
 temp*
+*.db

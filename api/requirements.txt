@@ -6,3 +6,4 @@ faster-whisper==1.2.1
 requests==2.31.0
 PyPDF2==3.0.1
 gtts==2.5.1
+sqlalchemy>=2.0.0
