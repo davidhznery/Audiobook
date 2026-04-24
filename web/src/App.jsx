@@ -2,8 +2,8 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import axios from 'axios'
 import './App.css'
 
-const API = 'http://127.0.0.1:8000'
-
+// Usar variable de entorno inyectada por Render o localhost para desarrollo
+const API = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
 // ─── helpers ───────────────────────────────────────────────────────
 function loadVocab() {
   try { return JSON.parse(localStorage.getItem('linguaread_vocab') || '[]') }

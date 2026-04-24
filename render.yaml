@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: audiobook-api
+    env: python
+    buildCommand: "cd api && pip install -r requirements.txt"
+    startCommand: "cd api && uvicorn main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false # Debes añadir tu API Key manualmente en el dashboard de Render
+
+  - type: web
+    name: audiobook-web
+    env: static
+    buildCommand: "cd web && npm install && npm run build"
+    staticPublishPath: "./web/dist"
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: audiobook-api
+          envVarKey: RENDER_EXTERNAL_URL
